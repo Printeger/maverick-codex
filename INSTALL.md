@@ -1,6 +1,6 @@
 # 给正在目标项目中工作的 Codex
 
-用户给你这个仓库，是授权你在**当前目标项目**初始化或升级 Maverick V1.1。
+用户给你这个仓库，是授权你在**当前目标项目**初始化或升级 Maverick V1.1.1。
 目标是项目级 Skill、真实子人格和项目知识；不要安装成 ChatGPT 全局个人 Skill。
 不要把源仓库当目标项目，不修改目标项目的业务实现。
 
@@ -17,10 +17,11 @@
 python3 /path/to/maverick-codex/scripts/maverick.py init --project /path/to/target-project
 ```
 
-若用户指定了低价工作模型，并且本客户端确实提供，可加 `--worker-model MODEL_ID`。
-否则所有人格沿用主会话模型；不要猜一个“便宜模型”的 ID。
+固定使用 `gpt-6.2-sol`：Maverick、Rebel、Inventor、Scientist 的推理强度为
+`high`；Hacker、Producer 为 `medium`。主 Agent 设置在项目 `.codex/config.toml`，
+五个子 Agent 在各自的 TOML 中设置。不提供自动模型路由或旧的低价模型参数。
 
-初始化合并根 `AGENTS.md` 和 `.codex/config.toml`，保留现有规则、模型、MCP、权限。
+初始化合并根 `AGENTS.md` 和 `.codex/config.toml`，覆盖模型与推理档位，保留其他规则、MCP、权限。
 只在没有并发设置时写入 2。只将 agents.enabled 改为 true，不触碰全局配置或 trust。
 既有未归属本工具的同名文件导致停止；不要用覆盖参数强行继续。
 重复 init 不重置项目知识和人格偏好；它也不代替版本升级。
@@ -37,7 +38,8 @@ python3 /path/to/maverick-codex/scripts/maverick.py upgrade --project /path/to/t
 本地改过的人格/跨学科卡片会保留并报告；手工改过的 Skill 或维护脚本若发生冲突，
 命令会在写入前停止，先核对具体差异，不静默覆盖。不新增备份目录或版本分支。
 升级后显式重读 Skill 和 Maverick 人格，重新运行 doctor；子人格用新线程读取新运行规则。
-项目知识已就绪时不重新填写、不重跑业务任务。
+项目知识已就绪时不重新填写、不重跑业务任务。请在新主会话和新子线程检查实际模型，
+如果 CLI、IDE 会话或项目不受信任导致配置没有生效，应报告真实原因。
 
 ## 2. 适配当前项目，而不是填空模板
 
@@ -64,7 +66,7 @@ Inventor 始终保留 `.agents/skills/maverick/references/knowledge/` 的跨学�
 python3 .agents/skills/maverick/scripts/maverick.py doctor --project .
 ```
 
-退出码 0：静态通过且背景就绪。2：背景仍未就绪。1：配置、文件或贡献格式错误。
+退出码 0：静态通过且背景就绪。2：背景仍未就绪。1：配置、固定模型、文件或贡献格式错误。
 脚本不调用模型；静态 PASS 不能证明当前会话真的加载了角色。
 
 读取已安装 `SKILL.md` 的“初始化验收”一节。使用当前 Codex 的真实命名角色功能，

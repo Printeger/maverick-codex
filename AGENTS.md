@@ -1,8 +1,10 @@
 # Working on Maverick Codex itself
 
 This repository contains an installer and source material, not an initialized user project.
-Keep V1.1 small: six reusable personalities, problem-driven thinking, on-demand knowledge,
+Keep V1.1.1 small: six reusable personalities, problem-driven thinking, on-demand knowledge,
 project-local installation, a factual contribution ledger and manual personality updates.
+Pin GPT-6.2 Sol: root, Rebel, Inventor and Scientist high; Hacker and Producer medium.
+No automatic model routing; preserve unrelated project settings.
 No evaluation service, auto-evolution loop,
 database, daemon, or automatic commits in installed projects.
 

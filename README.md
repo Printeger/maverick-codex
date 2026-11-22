@@ -1,4 +1,4 @@
-# Maverick Codex · V1.1
+# Maverick Codex · V1.1.1
 
 **一个有主见的主 Agent，五种个性鲜明的伙伴。根据问题的进展换思考方式，用实际成果说明贡献。**
 
@@ -15,9 +15,9 @@ V1.1 增加两件事：**问题驱动的思维切换**和**任务结束后的贡
 
 ```text
 请将 https://github.com/Printeger/maverick-codex 初始化到当前项目。
-先阅读 INSTALL.md，安装 V1.1，并根据当前项目的真实资料填写专业知识。
+先阅读 INSTALL.md，安装 V1.1.1，并根据当前项目的真实资料填写专业知识。
 若已经安装旧版，执行 upgrade，保留项目知识、状态与人格偏好。
-保留现有 AGENTS.md、模型、MCP 和权限设置，不修改业务代码。
+保留现有 AGENTS.md、MCP 和权限设置；按固定配置更新模型，不修改业务代码。
 让 Maverick 成为主协调者和主要声音，根据问题进展切换视角，按需调用伙伴。
 Inventor 保留跨学科知识地图。开发任务结束时汇报有证据的贡献和关键思维转变。
 最后分别报告静态检查与真实子 Agent 调用结果，不能把文件存在当成加载成功。
@@ -44,12 +44,32 @@ $maverick 这个方案太复杂。找一个更直接的实现，先把核心行�
 | **Producer** | Ohno 式消除浪费 | 眼前真正挡住交付的是什么？ |
 
 人物名称只解释设计启发，不模仿本人，也不承诺具备其能力。每份人格有执念、第一反应、
-取舍、冲突习惯、盲点和语言正反例；不限定项目领域，也不绑定某个模型。
+取舍、冲突习惯、盲点和语言正反例；不限定项目领域。V1.1.1 的模型配置固定。
 V1.1 保留五个伙伴的人格核心，强化 Maverick 对停滞、矛盾和复杂度的判断。
 
 Maverick 是主对话身份，不额外创建第六个常驻子线程。五个原生角色名为
 `mav_rebel`、`mav_inventor`、`mav_hacker`、`mav_scientist`、`mav_producer`。
 小任务可由主 Agent 完成，通常最多两名子 Agent，不要求全员参加。
+
+## 固定模型配置（V1.1.1）
+
+六人格统一使用 `gpt-6.2-sol`，不自动切换模型。问题驱动的人格切换机制保持不变。
+
+| 人格 | 模型 | 推理强度 |
+|---|---|---|
+| Maverick 主 Agent | `gpt-6.2-sol` | `high` |
+| Rebel | `gpt-6.2-sol` | `high` |
+| Inventor | `gpt-6.2-sol` | `high` |
+| Hacker | `gpt-6.2-sol` | `medium` |
+| Scientist | `gpt-6.2-sol` | `high` |
+| Producer | `gpt-6.2-sol` | `medium` |
+
+安装/升级在项目 `.codex/config.toml` 固定主 Agent，在五个 `.codex/agents/mav_*.toml`
+中固定子 Agent。覆盖模型与推理档位，其余 MCP、权限、项目记忆与人格偏好保持不变。
+旧版 Hacker 单独模型参数已取消。
+
+CLI 启动参数、项目信任或已经运行的会话仍可能使实际运行模型与文件配置不同。
+请在项目新会话验证，不要把静态文件检查当成模型已切换成功。
 
 ## 谁决定什么时候换人？
 
@@ -197,15 +217,15 @@ python3 .agents/skills/maverick/scripts/maverick.py report --project . --task TA
 python3 .agents/skills/maverick/scripts/maverick.py update --project . \
   --persona hacker --key simple_changes --rule '现有函数能完成时，直接修改现有函数。'
 
-# 可选：只给 Hacker 指定当前客户端实际提供的模型；inherit 恢复继承
-python3 .agents/skills/maverick/scripts/maverick.py sync --project . --worker-model YOUR_MODEL_ID
+# 根据固定模型档位和人格偏好同步配置
+python3 .agents/skills/maverick/scripts/maverick.py sync --project .
 ```
 
-不指定模型时沿用主会话配置；工具不猜便宜模型 ID，也不保证某账号可用。
+模型和推理强度固定，不自动选择 Astra 或 Luna；实际模型可用性需在目标 Codex 检查。
 `upgrade` 更新框架，`update` 调整人格，`sync` 重建角色配置，三者用途不同。
 
 初始化只增加受标记管理的 AGENTS 指导块、项目 Skill、五份角色和 `.maverick/` 数据，
-合并所需 agents 配置，保留已有模型、MCP、权限和并发设置。重复 `init` 不重置内容。
+合并所需 agents 配置，覆盖模型与推理档位，保留其他 MCP、权限和并发设置。重复 `init` 不重置内容。
 升级保留项目背景、知识、STATE、偏好及已有贡献；用户改过的人格/知识地图文件保留并报告。
 手工改过的 Skill 或维护脚本有冲突时先停止，不静默覆盖。生成的角色 TOML 由 `sync` 重建，
 不作为手工编辑入口。安装和升级不修改业务代码，不自动创建目标项目分支或提交。

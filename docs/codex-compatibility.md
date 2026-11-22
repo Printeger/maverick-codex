@@ -12,8 +12,10 @@
 
 子 Agent 的必填键是 `name`、`description`、`developer_instructions`。
 可选模型键包括 `model`、`model_reasoning_effort`、`model_reasoning_summary` 和 `model_verbosity`。
-本项目不硬编码模型 ID；省略模型和推理强度时沿用父会话的配置。
-如需便宜模型，使用当前客户端实际可用的 ID，并核对它支持的推理强度。
+V1.1.1 固定 `gpt-6.2-sol`，Maverick、Rebel、Inventor、Scientist 用 `high`，
+Hacker、Producer 用 `medium`。主 Agent 通过项目顶层的 `model` 和
+`model_reasoning_effort` 设置，五个子 Agent 则在各自 TOML 中显式设置。
+不提供动态模型路由或单独低价模型参数。
 
 ```toml
 [agents]
@@ -23,14 +25,16 @@ max_concurrent_threads_per_session = 2
 
 这里的并发数不含主 Agent。`max_threads` 是并发键的旧别名，不要同时写两者。
 `agents.enabled` 当前默认开启；不需要额外写入实验性 feature flags。
-不要追加重复的 `[agents]` 表，也不要擅自改动现有模型、MCP 或权限设置。
+不要追加重复的 `[agents]` 表；模型与推理档位按固定方案覆盖，其他 MCP、权限与并发设置保留。
 
 ## 继承与边界
 
 子 Agent 继承父会话的权限、模型提供者、MCP 和 Skills。
 角色 TOML 中的 `sandbox_mode`、`approval_policy`、`model_provider`、`mcp_servers`
 不能用来替换父会话配置。写着“只读”的人格指令也不是独立的只读沙箱。
-角色文件中的模型设置优先于创建时的默认设置，因此不要无意中固定旧模型。
+子 Agent 显式采用固定模型/档位。更高优先级的 CLI/会话配置可能覆盖项目主模型，
+已启动子线程也不一定自动加载修改后的 TOML。需在受信任的目标项目新会话中
+核查实际运行模型；静态配置通过不等于运行时通过。
 
 主项目指导必须区分身份：主协调者是 Maverick，子 Agent 保留被分派的人格。
 共享项目约束继续适用于所有人格；不要让子 Agent 再扮演 Maverick 或递归分工。

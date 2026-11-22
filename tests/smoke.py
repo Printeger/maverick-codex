@@ -58,7 +58,12 @@ class Smoke(unittest.TestCase):
         self.assertEqual(result["status"], "installed_needs_adaptation")
         self.assertTrue((self.project / "AGENTS.md").read_text().startswith(GUIDANCE))
         config = (self.project / ".codex/config.toml").read_text()
-        self.assertEqual(config, CONFIG)
+        parsed = tomllib.loads(config)
+        self.assertEqual(parsed["model"], "gpt-6.2-sol")
+        self.assertEqual(parsed["model_reasoning_effort"], "high")
+        self.assertEqual(parsed["agents"]["max_threads"], 4)
+        self.assertIn("project_docs", parsed["mcp_servers"])
+        self.assertIn("# Keep this comment and existing settings.", config)
         self.assertEqual((self.project / "app.py").read_text(), "print('existing application')\n")
         persona_dir = self.project / ".agents/skills/maverick/references/personas"
         self.assertEqual({p.stem for p in persona_dir.glob("*.md")}, ROLES)
@@ -68,7 +73,8 @@ class Smoke(unittest.TestCase):
             data = self.role(role)
             self.assertEqual(data["name"], "mav_" + role)
             self.assertTrue(data["description"] and data["developer_instructions"])
-            self.assertNotIn("model", data)
+            self.assertEqual(data["model"], "gpt-6.2-sol")
+            self.assertEqual(data["model_reasoning_effort"], "medium" if role in {"hacker", "producer"} else "high")
         pending = self.run_cli("doctor", code=2, installed=True)
         self.assertEqual((pending["static"], pending["project_context"]), ("PASS", "PENDING"))
         self.assertEqual(pending["native_runtime"], "NOT_TESTED_BY_DOCTOR")
@@ -108,18 +114,23 @@ class Smoke(unittest.TestCase):
         self.assertEqual(self.run_cli("init", code=1)["status"], "ERROR")
         self.assertEqual(files(self.project), before)
 
-    def test_worker_model_is_optional_and_can_return_to_inherit(self):
-        self.run_cli("init", "--worker-model", "selected-worker-model")
-        self.assertEqual(self.role("hacker")["model"], "selected-worker-model")
-        for role in ROLES - {"maverick", "hacker"}:
-            self.assertNotIn("model", self.role(role))
-        self.assertEqual(tomllib.loads((self.project / ".codex/config.toml").read_text())["model"],
-                         "existing-parent-model")
-        self.run_cli("sync", "--worker-model", "inherit", installed=True)
-        self.assertNotIn("model", self.role("hacker"))
+    def test_fixed_models_are_enforced_by_sync_and_doctor(self):
+        self.run_cli("init")
+        for role in ROLES - {"maverick"}:
+            data = self.role(role)
+            self.assertEqual(data["model"], "gpt-6.2-sol")
+            self.assertEqual(data["model_reasoning_effort"], "medium" if role in {"hacker", "producer"} else "high")
+        config = self.project / ".codex/config.toml"
+        config.write_text(config.read_text().replace('model = "gpt-6.2-sol"', 'model = "another-model"', 1))
+        drift = self.run_cli("doctor", code=1, installed=True)
+        self.assertTrue(any("Main model must" in message for message in drift["errors"]))
+        self.run_cli("sync", installed=True)
+        cfg = tomllib.loads(config.read_text())
+        self.assertEqual(cfg["model"], "gpt-6.2-sol")
+        self.assertEqual(cfg["model_reasoning_effort"], "high")
 
     def test_upgrade_preserves_project_data_and_edited_persona(self):
-        self.run_cli("init", "--worker-model", "chosen-worker")
+        self.run_cli("init")
         self.run_cli("update", "--persona", "hacker", "--key", "simple", "--rule", "Use the existing function.")
         state = self.project / ".maverick/STATE.md"
         state.write_text("# Current task\nTask ID: useful-work\nKeep this decision and result.\n")
@@ -134,18 +145,29 @@ class Smoke(unittest.TestCase):
         manifest = self.project / ".maverick/manifest.json"
         info = json.loads(manifest.read_text())
         info["managed_files"]["SKILL.md"] = hashlib.sha256(old_skill.encode()).hexdigest()
+        info["version"] = "1.1.0"  # Simulate a prior installed version.
+        info["worker_model"] = "legacy-worker"
         manifest.write_text(json.dumps(info))
         preserved = {p: p.read_bytes() for p in (state, domain, base,
                      self.project / ".maverick/preferences.json", self.project / ".maverick/updates.jsonl",
                      self.project / ".codex/config.toml", self.project / "app.py")}
         result = self.run_cli("upgrade")
-        self.assertEqual(result["version"], "1.1.0")
+        self.assertEqual(result["version"], "1.1.1")
         self.assertIn(str(base.relative_to(self.project)), result["preserved_local_files"])
         self.assertEqual((dest / "SKILL.md").read_text(), (ROOT / "skills/maverick/SKILL.md").read_text())
-        self.assertEqual({p: p.read_bytes() for p in preserved}, preserved)
+        for p, saved in preserved.items():
+            if p.name != "config.toml":
+                self.assertEqual(p.read_bytes(), saved)
+        updated = tomllib.loads((self.project / ".codex/config.toml").read_text())
+        self.assertEqual(updated["model"], "gpt-6.2-sol")
+        self.assertEqual(updated["model_reasoning_effort"], "high")
+        self.assertEqual(updated["agents"]["max_threads"], 4)
+        self.assertIn("project_docs", updated["mcp_servers"])
         self.assertIn("Locally chosen wording.", self.role("hacker")["developer_instructions"])
         self.assertIn("Use the existing function.", self.role("hacker")["developer_instructions"])
-        self.assertEqual(self.role("hacker")["model"], "chosen-worker")
+        self.assertEqual(self.role("hacker")["model"], "gpt-6.2-sol")
+        self.assertEqual(self.role("hacker")["model_reasoning_effort"], "medium")
+        self.assertNotIn("worker_model", json.loads(manifest.read_text()))
         before = files(self.project)
         self.assertEqual(self.run_cli("upgrade")["status"], "already_current")
         self.assertEqual(files(self.project), before)
