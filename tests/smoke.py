@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Installer smoke checks. Temporary projects only; no models, network or benchmark."""
+"""Install, upgrade and ledger checks. Temporary projects only; no models or network."""
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+
+from contributions_smoke import Contributions
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/maverick.py"
@@ -39,13 +42,13 @@ class Smoke(unittest.TestCase):
         (self.project / ".codex/config.toml").write_text(CONFIG)
         (self.project / "app.py").write_text("print('existing application')\n")
 
-    def run_cli(self, command, *args, code=0, installed=False):
+    def run_cli(self, command, *args, code=0, installed=False, stdin=None, raw=False):
         script = self.project / ".agents/skills/maverick/scripts/maverick.py" if installed else SCRIPT
         proc = subprocess.run([sys.executable, str(script), command,
                                "--project", str(self.project), *args],
-                              text=True, capture_output=True, timeout=15)
+                              text=True, capture_output=True, timeout=15, input=stdin)
         self.assertEqual(proc.returncode, code, proc.stdout + proc.stderr)
-        return json.loads(proc.stdout if code in (0, 2) else proc.stderr)
+        return proc.stdout if raw else json.loads(proc.stdout or proc.stderr)
 
     def role(self, role):
         return tomllib.loads((self.project / f".codex/agents/mav_{role}.toml").read_text())
@@ -114,6 +117,88 @@ class Smoke(unittest.TestCase):
                          "existing-parent-model")
         self.run_cli("sync", "--worker-model", "inherit", installed=True)
         self.assertNotIn("model", self.role("hacker"))
+
+    def test_upgrade_preserves_project_data_and_edited_persona(self):
+        self.run_cli("init", "--worker-model", "chosen-worker")
+        self.run_cli("update", "--persona", "hacker", "--key", "simple", "--rule", "Use the existing function.")
+        state = self.project / ".maverick/STATE.md"
+        state.write_text("# Current task\nTask ID: useful-work\nKeep this decision and result.\n")
+        domain = self.project / ".maverick/knowledge/domain.md"
+        domain.write_text("# Actual project knowledge\nPreserve the user's own references.\n")
+        base = self.project / ".agents/skills/maverick/references/personas/hacker.md"
+        base.write_text(base.read_text() + "\nLocally chosen wording.\n")
+        dest = self.project / ".agents/skills/maverick"
+        # Simulate an older, owned package file; its recorded baseline permits refresh.
+        old_skill = "# Previous installed package\n"
+        (dest / "SKILL.md").write_text(old_skill)
+        manifest = self.project / ".maverick/manifest.json"
+        info = json.loads(manifest.read_text())
+        info["managed_files"]["SKILL.md"] = hashlib.sha256(old_skill.encode()).hexdigest()
+        manifest.write_text(json.dumps(info))
+        preserved = {p: p.read_bytes() for p in (state, domain, base,
+                     self.project / ".maverick/preferences.json", self.project / ".maverick/updates.jsonl",
+                     self.project / ".codex/config.toml", self.project / "app.py")}
+        result = self.run_cli("upgrade")
+        self.assertEqual(result["version"], "1.1.0")
+        self.assertIn(str(base.relative_to(self.project)), result["preserved_local_files"])
+        self.assertEqual((dest / "SKILL.md").read_text(), (ROOT / "skills/maverick/SKILL.md").read_text())
+        self.assertEqual({p: p.read_bytes() for p in preserved}, preserved)
+        self.assertIn("Locally chosen wording.", self.role("hacker")["developer_instructions"])
+        self.assertIn("Use the existing function.", self.role("hacker")["developer_instructions"])
+        self.assertEqual(self.role("hacker")["model"], "chosen-worker")
+        before = files(self.project)
+        self.assertEqual(self.run_cli("upgrade")["status"], "already_current")
+        self.assertEqual(files(self.project), before)
+
+    def test_upgrade_conflict_stops_before_writing(self):
+        self.run_cli("init")
+        skill = self.project / ".agents/skills/maverick/SKILL.md"
+        skill.write_text(skill.read_text() + "\nA locally modified framework instruction.\n")
+        before = files(self.project)
+        result = self.run_cli("upgrade", code=1)
+        self.assertIn("Locally edited framework", result["message"])
+        self.assertEqual(files(self.project), before)
+
+    def test_doctor_detects_stale_root_instructions(self):
+        self.run_cli("init")
+        skill = self.project / ".agents/skills/maverick/SKILL.md"
+        original = skill.read_text()
+        skill.write_text("---\nname: maverick\ndescription: Old routing\n---\nUse old task routing.\n")
+        result = self.run_cli("doctor", code=1, installed=True)
+        self.assertTrue(any("SKILL.md" in error for error in result["errors"]))
+        skill.write_text(original)
+        guidance = self.project / "AGENTS.md"
+        guidance.write_text(guidance.read_text().replace("Choose a useful thinking mode", "Use an old job rota"))
+        result = self.run_cli("doctor", code=1, installed=True)
+        self.assertTrue(any("stale or edited Maverick instructions" in error for error in result["errors"]))
+
+    def test_installed_ledger_cli_and_doctor_validation(self):
+        self.run_cli("init")
+        contribution = {"id": "route", "task": "fix-one", "persona": "rebel", "mode": "perspective",
+                        "actor": "maverick", "trigger": "Repeated failure", "kind": "correction",
+                        "contribution": "Check the caller's assumption", "status": "proposed",
+                        "outcome": "", "evidence": [], "impact": None}
+        self.run_cli("record", "--event", "-", installed=True, stdin=json.dumps(contribution))
+        pending = self.run_cli("report", "--task", "fix-one", installed=True, raw=True)
+        self.assertIn("待验证建议", pending)
+        self.assertNotIn("3 · 关键", pending)
+        contribution.update(status="confirmed", outcome="The incorrect fallback was removed.",
+                            evidence=["app.py: entry point"], impact=2)
+        self.run_cli("record", "--event", "-", installed=True, stdin=json.dumps(contribution))
+        actual = self.run_cli("report", "--task", "fix-one", installed=True, raw=True)
+        self.assertIn("2 · 实质", actual)
+        self.assertIn("主对话，非子 Agent", actual)
+        self.assertNotIn("待验证建议", actual)
+        self.assertEqual(self.run_cli("doctor", code=2, installed=True)["static"], "PASS")
+        ledger = self.project / ".maverick/contributions.jsonl"
+        before = ledger.read_bytes()
+        self.run_cli("upgrade")
+        self.assertEqual(ledger.read_bytes(), before)
+        with ledger.open("a") as target:
+            target.write("{not json}\n")
+        bad = self.run_cli("doctor", code=1, installed=True)
+        self.assertEqual(bad["static"], "FAIL")
+        self.assertTrue(any("line 3" in error for error in bad["errors"]))
 
 
 if __name__ == "__main__":

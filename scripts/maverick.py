@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Project-local Maverick installation and explicit personality updates. Python 3.11+."""
+"""Project-local Maverick installation, upgrades and contribution reports. Python 3.11+."""
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -14,7 +15,7 @@ try:
 except ImportError:
     raise SystemExit("Maverick requires Python 3.11 or newer (stdlib tomllib).")
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 ROLES = ("maverick", "rebel", "inventor", "hacker", "scientist", "producer")
 CHILDREN = ROLES[1:]
 START = "<!-- maverick-codex:start -->"
@@ -26,6 +27,13 @@ DESCRIPTIONS = {
     "hacker": "Build the shortest useful implementation; avoid speculative abstractions and process.",
     "scientist": "Resolve a material factual doubt with discriminating evidence; do not demand exhaustive tests.",
     "producer": "Remove a concrete delivery bottleneck; do not invent a process department.",
+}
+# V1 did not store package hashes. These are the three V1 files changed in V1.1;
+# unchanged files can be compared with their incoming contents during migration.
+V1_CORE_HASHES = {
+    "SKILL.md": "5ec5dda0c3e902f7ae92773c088d7a234632e595a698d0b83cd4a80e4c0998d0",
+    "scripts/maverick.py": "d2bc2d0500d87446342ee05c06824d8c077984ed111d4276b9f6c2a2017c8417",
+    "references/personas/maverick.md": "78b47f1093d6261d19f442e20837f77d8d1813d5739ef220b826fd4ead73c284",
 }
 
 
@@ -39,6 +47,10 @@ def read(path: Path) -> str:
 
 def js(value) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+
+
+def content_hash(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def source_layout() -> tuple[Path, Path, Path, Path]:
@@ -90,10 +102,23 @@ explicit personality adjustments. Use the knowledge index to load only relevant 
 
 Maverick is the default voice: choose a direction, explain it plainly, and act.
 Handle small work directly. Delegate only bounded work with a net benefit, normally
-at most two children. Do not run a six-agent committee. Reuse an existing child only
-for the same active workstream; thread reuse never substitutes for persisted state.
+at most two children. Reassess the problem after a meaningful result, failed attempt,
+contradictory evidence or stage change. Continuing failure, rising complexity or time
+without new information are reasons to reconsider the approach, not to follow a role rota.
+Choose a useful thinking mode from the current obstacle, not the task's job title.
+First try a brief perspective in the main thread; reuse a relevant same-persona child
+when useful; create an independent child only for a concrete benefit. No timer or committee.
+Reuse never changes an existing child's bound persona or substitutes for persisted state.
 Use `mav_rebel`, `mav_inventor`, `mav_hacker`, `mav_scientist`, `mav_producer` when
 native custom agents are available. Never claim native role loading from a task name alone.
+
+Only Maverick writes `.maverick/contributions.jsonl`: record meaningful returned work
+or consequential decisions, with actual actor, participation mode, outcome and evidence.
+A perspective used by Maverick is not a separate child's participation. Unconfirmed ideas
+receive no impact grade. At each requested development task or explicit milestone's end,
+report the result, evidenced contributions and any important change in understanding.
+Keep small-task summaries short. The ledger records observations, not instructions or
+automatic proof; never manufacture participation, evidence, savings or counterfactual credit.
 
 Default to a useful prototype. Add tests, abstractions, compatibility layers or process
 only for a concrete need or an existing requirement. Do not create branches, commits,
@@ -155,7 +180,12 @@ You are this delegated persona, not the root Maverick. Read `.maverick/PROJECT.m
 and the relevant entries of `.maverick/knowledge/INDEX.md`; load details on demand.
 Follow the parent's task scope and file ownership. Do not redo the whole project survey.
 Give the parent the useful conclusion, changed paths or source evidence, actual verification,
-and unresolved blocker. Usually keep the report under 180 words unless evidence needs more.
+and unresolved blocker. Distinguish a proposal from a confirmed result; say what changed
+and why it matters when there was a material contribution. Usually keep the report under
+180 words unless evidence needs more. Only the root writes the contribution ledger.
+Your persona is a way of thinking, not a restricted job title. If repeated attempts fail,
+complexity grows or evidence contradicts the approach, report that concrete signal;
+do not keep patching silently. The root decides whether to change perspective or delegate.
 Do not spawn further agents or require repeated consensus unless explicitly delegated.
 Do not edit personality rules without an explicit user update request.
 """
@@ -201,26 +231,17 @@ def write_all(project: Path, files: dict[Path, str]) -> list[str]:
     return changed
 
 
-def init(args) -> dict:
-    project = args.project
-    if not project.is_dir():
-        raise ValueError(f"Project directory does not exist: {project}")
-    existing = (project / ".maverick/manifest.json").exists()
-    if existing:
-        manifest(project)
-        if args.worker_model:
-            raise ValueError("Already installed. Use sync --worker-model MODEL to change the worker model.")
-        return {"status": "already_initialized", "changed": [], "next": "Run doctor; continue adaptation if pending."}
-    root, personas, knowledge, skill = source_layout()
-    required = [skill, *(personas / f"{r}.md" for r in ROLES), knowledge / "INDEX.md"]
+def package_files(project: Path) -> dict[Path, str]:
+    _, personas, knowledge, skill = source_layout()
+    required = [skill, *(personas / f"{r}.md" for r in ROLES), knowledge / "INDEX.md",
+                Path(__file__).with_name("contributions.py")]
     for path in required:
         if not path.is_file():
             raise ValueError(f"Incomplete source package: {path}")
     dest = skill_dir(project)
-    files = {
-        dest / "SKILL.md": read(skill),
-        dest / "scripts/maverick.py": read(Path(__file__).resolve()),
-    }
+    files = {dest / "SKILL.md": read(skill),
+             dest / "scripts/maverick.py": read(Path(__file__).resolve()),
+             dest / "scripts/contributions.py": read(Path(__file__).with_name("contributions.py"))}
     metadata = skill.parent / "agents/openai.yaml"
     if metadata.is_file():
         files[dest / "agents/openai.yaml"] = read(metadata)
@@ -228,11 +249,30 @@ def init(args) -> dict:
         files[dest / "references/personas" / path.name] = read(path)
     for path in sorted(knowledge.glob("*.md")):
         files[dest / "references/knowledge" / path.name] = read(path)
+    return files
+
+
+def init(args) -> dict:
+    project = args.project
+    if not project.is_dir():
+        raise ValueError(f"Project directory does not exist: {project}")
+    existing = (project / ".maverick/manifest.json").exists()
+    if existing:
+        info = manifest(project)
+        if args.worker_model:
+            raise ValueError("Already installed. Use sync --worker-model MODEL to change the worker model.")
+        return {"status": "already_initialized", "version": info.get("version"), "changed": [],
+                "next": "Run upgrade from the new source package." if info.get("version") != VERSION
+                else "Run doctor; continue adaptation if pending."}
+    dest = skill_dir(project)
+    files = package_files(project)
+    hashes = {str(path.relative_to(dest)): content_hash(body) for path, body in files.items()}
     files[project / ".maverick/manifest.json"] = js({
         "format": 1, "version": VERSION, "installed_at": now(), "worker_model": args.worker_model,
-        "native_roles": ["mav_" + r for r in CHILDREN],
+        "native_roles": ["mav_" + r for r in CHILDREN], "managed_files": hashes,
     })
     files[project / ".maverick/preferences.json"] = "{}\n"
+    files[project / ".maverick/contributions.jsonl"] = ""
     files[project / ".maverick/PROJECT.md"] = f"""# {args.name or project.name}
 
 Status: PENDING
@@ -283,9 +323,14 @@ Record only gaps that affect the next task. Do not build a textbook or mirror th
 
 ## Last verification
 - Native custom-agent execution: NOT_RUN. File installation is not proof of runtime integration.
+
+## Latest task / thinking change
+- No completed development task yet. At a meaningful handoff, retain the current task ID,
+  result, evidence and latest important change in understanding; do not copy the full ledger.
 """
     for role in CHILDREN:
-        files[project / f".codex/agents/mav_{role}.toml"] = compiled_role(role, read(personas / f"{role}.md"), {}, args.worker_model)
+        files[project / f".codex/agents/mav_{role}.toml"] = compiled_role(
+            role, files[dest / f"references/personas/{role}.md"], {}, args.worker_model)
     # Unowned collisions are checked before changing AGENTS.md or config.toml.
     for path, content in files.items():
         ensure_owned(path, content)
@@ -296,9 +341,64 @@ Record only gaps that affect the next task. Do not build a textbook or mirror th
             "next": "Read the installed skill. Fill project knowledge from actual files, run doctor, then do a real named-child smoke test."}
 
 
+def upgrade(args) -> dict:
+    """Refresh framework files; retain project facts, preferences and local persona edits."""
+    project, dest = args.project, skill_dir(args.project)
+    info, prefs = manifest(project), preferences(project)
+    old_version = info.get("version")
+    if old_version not in ("1.0.0", VERSION):
+        raise ValueError(f"Unsupported upgrade from {old_version}; no files changed.")
+    files = package_files(project)
+    old_hashes = info.get("managed_files", {})
+    if not isinstance(old_hashes, dict):
+        raise ValueError("Invalid managed_files in manifest; no files changed.")
+    hashes, preserved = {}, []
+    for path, incoming in files.items():
+        relative = str(path.relative_to(dest))
+        baseline = old_hashes.get(relative)
+        if baseline is None and old_version == "1.0.0":
+            baseline = V1_CORE_HASHES.get(relative, content_hash(incoming))
+        hashes[relative] = content_hash(incoming)
+        if not path.exists() or read(path) == incoming:
+            continue
+        if baseline and content_hash(read(path)) == baseline:
+            continue
+        if relative.startswith(("references/personas/", "references/knowledge/")):
+            files[path] = read(path)
+            hashes[relative] = baseline or content_hash(incoming)
+            preserved.append(str(path.relative_to(project)))
+        else:
+            raise ValueError(f"Locally edited framework file: {path}. Reconcile it with the new source before upgrade; no files changed.")
+    info.update({"version": VERSION, "managed_files": hashes})
+    if old_version != VERSION:
+        info["upgraded_at"] = now()
+    files[project / ".maverick/manifest.json"] = js(info)
+    ledger = project / ".maverick/contributions.jsonl"
+    if not ledger.exists():
+        files[ledger] = ""
+    else:
+        from contributions import validate_ledger
+        errors = validate_ledger(project)
+        if errors:
+            raise ValueError("Invalid contribution ledger: " + "; ".join(errors))
+    for role in CHILDREN:
+        path = project / f".codex/agents/mav_{role}.toml"
+        content = compiled_role(role, files[dest / f"references/personas/{role}.md"], prefs, info.get("worker_model"))
+        ensure_owned(path, content, generated=True)
+        files[path] = content
+    files[project / "AGENTS.md"] = merge_guidance(read(project / "AGENTS.md"))
+    files[project / ".codex/config.toml"] = merge_config(read(project / ".codex/config.toml"))
+    changed = write_all(project, files)
+    return {"status": "upgraded" if changed else "already_current", "from": old_version,
+            "version": VERSION, "changed": changed, "preserved_local_files": preserved,
+            "next": "Reread the installed skill, run doctor, and use a new child for updated runtime instructions. Project knowledge and STATE were preserved."}
+
+
 def sync(args, new_prefs: dict | None = None) -> dict:
     project = args.project
     info = manifest(project)
+    if info.get("version") != VERSION:
+        raise ValueError("Run upgrade from the new source package before sync/update.")
     prefs = preferences(project) if new_prefs is None else new_prefs
     model = getattr(args, "worker_model", None)
     if model:
@@ -351,6 +451,21 @@ def update(args) -> dict:
     return result
 
 
+def record(args) -> dict:
+    from contributions import record as append_contribution
+    if manifest(args.project).get("version") != VERSION:
+        raise ValueError("Run upgrade from the new source package before recording contributions.")
+    raw = sys.stdin.read() if args.event == "-" else Path(args.event).read_text(encoding="utf-8")
+    return append_contribution(args.project, json.loads(raw))
+
+
+def report(args) -> str:
+    from contributions import report as contribution_report
+    if manifest(args.project).get("version") != VERSION:
+        raise ValueError("Run upgrade from the new source package before reporting contributions.")
+    return contribution_report(args.project, args.task)
+
+
 def doctor(args) -> dict:
     project = args.project
     errors, pending, notes = [], [], []
@@ -359,15 +474,28 @@ def doctor(args) -> dict:
     except (ValueError, json.JSONDecodeError) as exc:
         return {"static": "FAIL", "project_context": "UNKNOWN", "native_runtime": "NOT_TESTED_BY_DOCTOR", "errors": [str(exc)]}
     dest = skill_dir(project)
-    required = [dest / "SKILL.md", dest / "scripts/maverick.py", project / ".maverick/STATE.md",
+    if info.get("version") != VERSION:
+        errors.append(f"Installed version is {info.get('version')}; run upgrade from the new source package.")
+    required = [dest / "SKILL.md", dest / "scripts/maverick.py", dest / "scripts/contributions.py",
+                project / ".maverick/STATE.md", project / ".maverick/contributions.jsonl",
                 project / ".maverick/knowledge/INDEX.md", dest / "references/knowledge/INDEX.md"]
     required += [dest / f"references/personas/{r}.md" for r in ROLES]
     errors += [f"Missing: {p.relative_to(project)}" for p in required if not p.is_file()]
     skill = read(dest / "SKILL.md")
     if not skill.startswith("---\n") or not re.search(r"(?m)^name: maverick$", skill) or not re.search(r"(?m)^description: .+", skill):
         errors.append("Skill frontmatter is missing name/description.")
-    if START not in read(project / "AGENTS.md") or END not in read(project / "AGENTS.md"):
-        errors.append("AGENTS.md is missing the managed Maverick block.")
+    guidance = read(project / "AGENTS.md")
+    if guidance.count(START) != 1 or guidance.count(END) != 1 or guidance.index(END) < guidance.index(START):
+        errors.append("AGENTS.md has missing or invalid Maverick markers.")
+    elif guidance[guidance.index(START):guidance.index(END) + len(END)] != root_block():
+        errors.append("AGENTS.md has stale or edited Maverick instructions; run upgrade from the source package.")
+    hashes = info.get("managed_files", {})
+    if not isinstance(hashes, dict):
+        errors.append("Invalid managed_files in manifest.")
+        hashes = {}
+    for relative in ("SKILL.md", "scripts/maverick.py", "scripts/contributions.py", "agents/openai.yaml"):
+        if relative not in hashes or content_hash(read(dest / relative)) != hashes[relative]:
+            errors.append(f"Stale or edited framework file: {relative}; reconcile with the source package before upgrade.")
     try:
         cfg = tomllib.loads(read(project / ".codex/config.toml"))
         ac = cfg.get("agents", {})
@@ -402,7 +530,11 @@ def doctor(args) -> dict:
         for target in re.findall(r"\]\(([^)]+)\)", read(index)):
             if "://" not in target and not target.startswith("#") and not (index.parent / target.split("#")[0]).is_file():
                 errors.append(f"Broken knowledge link in {index.name}: {target}")
+    if (dest / "scripts/contributions.py").is_file():
+        from contributions import validate_ledger
+        errors += validate_ledger(project)
     notes.append("Static checks cannot prove trust, model availability, current-session skill discovery or native child dispatch.")
+    notes.append("Ledger checks validate structure and attribution rules, not the truth of supplied evidence or impact grades.")
     notes.append("Use INSTALL.md / the skill's initialization check to dispatch a real named child. Task names alone are not proof.")
     return {"static": "FAIL" if errors else "PASS", "project_context": "PENDING" if pending else "READY",
             "native_runtime": "NOT_TESTED_BY_DOCTOR", "pending": pending, "errors": errors, "notes": notes}
@@ -411,7 +543,7 @@ def doctor(args) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "doctor", "sync", "update"):
+    for name in ("init", "upgrade", "doctor", "sync", "update", "record", "report"):
         p = commands.add_parser(name)
         p.add_argument("--project", type=lambda s: Path(s).expanduser().resolve(), default=Path.cwd())
         if name in ("init", "sync"):
@@ -425,13 +557,17 @@ def main() -> int:
             action.add_argument("--rule")
             action.add_argument("--remove", action="store_true")
             p.add_argument("--because", help="A short actual observation; omit private details.")
+        if name == "record":
+            p.add_argument("--event", required=True, help="JSON event file, or - to read one event from stdin.")
+        if name == "report":
+            p.add_argument("--task", required=True, help="Task or milestone ID recorded in the contribution ledger.")
     args = parser.parse_args()
     try:
         result = globals()[args.command](args)
     except (ValueError, OSError, json.JSONDecodeError, tomllib.TOMLDecodeError) as exc:
         print(js({"status": "ERROR", "message": str(exc)}), end="", file=sys.stderr)
         return 1
-    print(js(result), end="")
+    print(result if isinstance(result, str) else js(result), end="")
     if args.command == "doctor":
         return 1 if result["static"] == "FAIL" else 2 if result["project_context"] != "READY" else 0
     return 0
