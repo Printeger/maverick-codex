@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from contributions import record, report, validate_ledger
+from contributions import ROLES, participation, record, report, validate_ledger
 
 
 def event(**changes):
@@ -14,6 +14,16 @@ def event(**changes):
              "actor": "maverick", "trigger": "Two repairs did not change the result.",
              "kind": "direction", "contribution": "Check the input contract first.",
              "status": "proposed", "outcome": "", "evidence": [], "impact": None}
+    value.update(changes)
+    return value
+
+
+def initial(role, **changes):
+    value = event(id=f"initial-{role}", persona=role, phase="initial", status="reviewed",
+                  mode="direct" if role == "maverick" else "native_subagent",
+                  actor="maverick" if role == "maverick" else f"thread-{role}",
+                  outcome="Judgment returned; retain the direct implementation.",
+                  evidence=[f"agent-return: {role} initial judgment"])
     value.update(changes)
     return value
 
@@ -45,7 +55,7 @@ class Contributions(unittest.TestCase):
         self.assertIn("The caller supplies the wrong shape.", text)
 
     def test_unconfirmed_work_cannot_receive_credit(self):
-        for index, status in enumerate(("proposed", "unknown", "not_adopted")):
+        for index, status in enumerate(("reviewed", "proposed", "unknown", "not_adopted")):
             record(self.project, event(id=str(index), status=status, outcome="No confirmed effect."))
         text = report(self.project, "parser-fix")
         self.assertNotIn("1 · 辅助", text)
@@ -56,6 +66,64 @@ class Contributions(unittest.TestCase):
         with self.assertRaises(ValueError):
             record(self.project, event(status="proposed", impact=3))
         self.assertEqual(self.ledger.read_bytes(), before)
+
+    def test_initial_participation_is_separate_from_impact_and_legacy_records(self):
+        record(self.project, event(mode="native_subagent", actor="thread-rebel"))
+        self.assertEqual(participation(self.project, "parser-fix")["completed"], [])
+        self.assertIn("首轮记录不齐全：0/6", report(self.project, "parser-fix"))
+        for role in ROLES:
+            record(self.project, initial(role))
+        self.assertEqual(participation(self.project, "parser-fix"),
+                         {"complete": True, "completed": list(ROLES), "missing": [], "conflicts": []})
+        text = report(self.project, "parser-fix")
+        self.assertIn("首轮记录齐全：6/6", text)
+        self.assertIn("已完成判断，未确认影响", text)
+        self.assertNotIn("1 · 辅助", text)
+        self.assertNotIn("2 · 实质", text)
+        self.assertNotIn("3 · 关键", text)
+        record(self.project, initial("rebel", status="confirmed", impact=2,
+                                     outcome="Applied the corrected input contract."))
+        self.assertTrue(participation(self.project, "parser-fix")["complete"])
+        self.assertIn("2 · 实质", report(self.project, "parser-fix"))
+        self.assertEqual(validate_ledger(self.project), [])
+
+    def test_initial_judgments_cannot_be_root_perspectives_or_relabelled_revisions(self):
+        invalid = (initial("rebel", mode="perspective", actor="maverick"),
+                   initial("rebel", outcome=""), initial("rebel", evidence=[]),
+                   initial("rebel", phase="later"), initial("rebel", impact=1))
+        for item in invalid:
+            with self.subTest(item=item), self.assertRaises(ValueError):
+                record(self.project, item)
+        self.assertFalse(self.ledger.exists())
+        legacy = initial("rebel")
+        del legacy["phase"]
+        record(self.project, legacy)
+        before = self.ledger.read_bytes()
+        with self.assertRaises(ValueError):
+            record(self.project, initial("rebel"))
+        self.assertEqual(self.ledger.read_bytes(), before)
+        record(self.project, initial("hacker"))
+        later = initial("hacker")
+        del later["phase"]
+        before = self.ledger.read_bytes()
+        with self.assertRaises(ValueError):
+            record(self.project, later)
+        self.assertEqual(self.ledger.read_bytes(), before)
+
+    def test_one_actor_cannot_count_as_two_initial_personas(self):
+        for role in ROLES:
+            changes = {"actor": "thread-shared"} if role in ("rebel", "inventor") else {}
+            record(self.project, initial(role, **changes))
+        record(self.project, initial("scientist", task="another-task", actor="thread-hacker"))
+        result = participation(self.project, "parser-fix")
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["missing"], ["rebel", "inventor"])
+        self.assertEqual(result["conflicts"], ["thread-shared: rebel, inventor"])
+        text = report(self.project, "parser-fix")
+        self.assertIn("首轮记录不齐全：4/6", text)
+        self.assertIn("未记录完成或身份冲突：Rebel、Inventor", text)
+        self.assertIn("同一执行者对应不同人格：thread-shared: rebel, inventor", text)
+        self.assertNotIn("another-task", text)
 
     def test_subagent_identity_and_task_scope_are_not_inferred(self):
         record(self.project, event(id="experiment", persona="scientist", mode="native_subagent",

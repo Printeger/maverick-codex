@@ -152,7 +152,7 @@ class Smoke(unittest.TestCase):
                      self.project / ".maverick/preferences.json", self.project / ".maverick/updates.jsonl",
                      self.project / ".codex/config.toml", self.project / "app.py")}
         result = self.run_cli("upgrade")
-        self.assertEqual(result["version"], "1.1.1")
+        self.assertEqual(result["version"], "1.2.0")
         self.assertIn(str(base.relative_to(self.project)), result["preserved_local_files"])
         self.assertEqual((dest / "SKILL.md").read_text(), (ROOT / "skills/maverick/SKILL.md").read_text())
         for p, saved in preserved.items():
@@ -190,7 +190,7 @@ class Smoke(unittest.TestCase):
         self.assertTrue(any("SKILL.md" in error for error in result["errors"]))
         skill.write_text(original)
         guidance = self.project / "AGENTS.md"
-        guidance.write_text(guidance.read_text().replace("Choose a useful thinking mode", "Use an old job rota"))
+        guidance.write_text(guidance.read_text().replace("## Maverick for this project", "## Stale Maverick instructions"))
         result = self.run_cli("doctor", code=1, installed=True)
         self.assertTrue(any("stale or edited Maverick instructions" in error for error in result["errors"]))
 
@@ -221,6 +221,46 @@ class Smoke(unittest.TestCase):
         bad = self.run_cli("doctor", code=1, installed=True)
         self.assertEqual(bad["static"], "FAIL")
         self.assertTrue(any("line 3" in error for error in bad["errors"]))
+
+    def test_installed_initial_participation_requires_real_returned_roles(self):
+        self.run_cli("init")
+        task = "whole-user-task"
+        self.run_cli("report", "--task", task, "--require-full-team",
+                     installed=True, raw=True, code=2)
+        judgment = {"id": "viewpoint", "task": task, "persona": "rebel", "mode": "perspective",
+                    "actor": "maverick", "trigger": "Initial task review", "kind": "direction",
+                    "contribution": "The existing direct approach is sufficient.", "status": "reviewed",
+                    "outcome": "No additional abstraction is needed.", "evidence": ["app.py: entry point"],
+                    "impact": None}
+        self.run_cli("record", "--event", "-", installed=True, stdin=json.dumps(judgment))
+        self.run_cli("report", "--task", task, "--require-full-team",
+                     installed=True, raw=True, code=2)
+        ledger = self.project / ".maverick/contributions.jsonl"
+        before = ledger.read_bytes()
+        self.run_cli("record", "--event", "-", installed=True, code=1,
+                     stdin=json.dumps({**judgment, "phase": "initial"}))
+        self.assertEqual(ledger.read_bytes(), before)
+        for role in sorted(ROLES - {"maverick"}):
+            item = {**judgment, "id": "initial-" + role, "persona": role,
+                    "phase": "initial", "mode": "delegated_subagent", "actor": "fixture-thread-" + role,
+                    "evidence": ["fixture response: " + role],
+                    "status": "not_adopted" if role == "inventor" else "reviewed"}
+            self.run_cli("record", "--event", "-", installed=True, stdin=json.dumps(item))
+        # Five child returns alone are insufficient: Maverick must integrate them.
+        self.run_cli("report", "--task", task, "--require-full-team",
+                     installed=True, raw=True, code=2)
+        decision = {**judgment, "id": "initial-maverick", "persona": "maverick", "phase": "initial",
+                    "mode": "direct", "actor": "maverick", "contribution": "Integrated the five judgments.",
+                    "outcome": "Keep the direct implementation; decline the unused alternative.",
+                    "evidence": ["initial-" + role for role in sorted(ROLES - {"maverick"})]}
+        self.run_cli("record", "--event", "-", installed=True, stdin=json.dumps(decision))
+        result = self.run_cli("report", "--task", task, "--require-full-team", installed=True, raw=True)
+        self.assertIn("未采用", result)
+        for role in ROLES:
+            self.assertIn(role.capitalize(), result)
+        for grade in ("1 · 辅助", "2 · 实质", "3 · 关键"):
+            self.assertNotIn(grade, result)
+        self.assertEqual(self.run_cli("doctor", code=2, installed=True)["static"], "PASS")
 
 
 if __name__ == "__main__":
