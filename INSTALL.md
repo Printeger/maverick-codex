@@ -1,118 +1,121 @@
-# 给正在目标项目中工作的 Codex
+# 安装与使用 Maverick Forge
 
-用户给你本仓库，是授权在**当前目标项目**初始化或升级 Maverick V1.2.0。
-交付项目级 Skill、真实子人格与项目知识。保留目标项目路径，不把源仓库当目标项目，
-不安装成全局个人 Skill，不修改目标项目的业务实现。
+## 1. 准备客户端
 
-## 1. 安装或升级
+支持 macOS、Linux 和 WSL。需要 Python 3.11+、可运行的 `agy` 与 `codex`，以及两个客户端各自的登录。
+安装框架不搬运凭据，也不代替首次账号登录。
 
-先读目标项目已有的 `AGENTS.md` 和用户要求。将源仓库放在目标项目之外的工具目录，
-使用正常 GitHub 访问方式，不获取或输出凭据。需要 Python 3.11+，脚本只用标准库。
-
-新项目从源目录执行：
+AGY 官方安装入口：
 
 ```bash
-python3 /path/to/maverick-codex/scripts/maverick.py init --project /path/to/target-project
+curl -fsSL https://antigravity.google/cli/install.sh | bash
 ```
 
-已安装 V1.0、V1.1 或 V1.1.1 的项目，取得新版源仓库后执行：
+安装说明见 [AGY Getting started](https://antigravity.google/docs/getting-started?tab=cli)。
+Codex 按已有安装方式使用；先用 `codex --version`、`codex login status` 确认可用。
+`agy models` 应列出 `gemini-4-neon-high`；实际账号没有该模型时不会改用别的模型。
+
+## 2. 在目标项目一条命令安装
 
 ```bash
-python3 /path/to/maverick-codex/scripts/maverick.py upgrade --project /path/to/target-project
+curl -fsSL https://raw.githubusercontent.com/Printeger/maverick-codex/maverick-forge/scripts/install.sh | bash -s -- --project "$PWD"
 ```
 
-不要用 `init` 覆盖或重置旧安装。`upgrade` 更新受管理的 Skill、AGENTS 块和五个生成角色，
-保留项目知识、STATE、人格偏好、调整记录和贡献账本。本地修改的人格与跨学科卡片会保留并列出；
-手工修改的 Skill 或维护脚本有冲突时，核对实际差异，不用覆盖参数强行继续。
-
-固定模型为 `gpt-6.2-sol`：Maverick、Rebel、Inventor、Scientist 为 `high`，
-Hacker、Producer 为 `medium`。主配置在项目 `.codex/config.toml`，五个子配置在 `.codex/agents/`。
-不自动路由模型。合并所需 agents 设置，覆盖模型档位，保留无关 MCP、权限和既有并发设置；
-没有并发设置时写入 2。五个角色分批运行即可，不需要改成同时运行五人。
-
-重复 `init` 不重置内容，也不代替升级。安装和升级不触碰全局信任或审批配置，
-不为目标项目自动建立分支、提交、备份目录或发布任务。
-
-### 升级后重读规则
-
-显式重读安装后的 Skill、主协调规则和 Maverick 人格。子角色使用新线程读取新的运行规则，
-不假定旧线程会自动热加载。项目知识已就绪时不重新填写，不重跑业务实验。
-
-旧 STATE 中“可省略角色”“先主线程借用视角再考虑调用”等框架说明已过时。
-保留事实、任务 ID、进展和用户明确要求；不得为迁移擅自删除用户指令。
-若保留的本地人格、偏好或项目指导与新版六人格约定冲突，列出具体位置和冲突内容，
-按指令优先级处理，不把“文件已升级”报告成“行为已生效”。
-
-## 2. 建立或补齐项目知识
-
-读取足以识别项目的资料：README、已有规范、构建/依赖清单、实际入口和必要的代表模块。
-若项目为空，使用用户已明确的目标，把实现标为未开始；只有缺少必要目标时才提问。
-
-从真实资料填写以下文件，再将 `Status` 设为 `READY`：
-
-- `.maverick/PROJECT.md`：目标、边界、关键源路径、实际运行入口与当前限制。
-- `.maverick/knowledge/domain.md`：领域背景、技术约定、资料来源和影响下一步的未知项。
-
-论文项目可记录研究问题、证据和写作约定；产品项目可记录用户、场景和交付形态。
-人格偏好留在人格配置中，不写成领域事实。背景共享，细节按需加载，不复制六份知识库。
-
-Inventor 保留 `.agents/skills/maverick/references/knowledge/` 的跨学科地图，
-项目知识是新增的一层。只为当前问题补充需要的学科资料；没有来源的内容标为假设。
-
-## 3. 静态检查与五个真实返回
-
-在目标项目执行：
+已有源码 checkout 时可直接运行：
 
 ```bash
-python3 .agents/skills/maverick/scripts/maverick.py doctor --project .
+python3 scripts/forge.py install --project /absolute/path/to/your-project
 ```
 
-退出码 0 表示静态通过且背景就绪，2 表示背景待补，1 表示配置、文件或账本格式问题。
-脚本不调用模型，不能证明当前会话已加载人格或模型。
+不要把路径误指向框架仓库，除非要开发的就是框架自身。
+网络不便时把这个分支下载到本地，同样运行上述 Python 命令；运行时复制进项目，不依赖该下载位置。
 
-按已安装 Skill 的“初始化验收”完成本次初始化/升级任务的五个短只读子任务。
-优先选择原生 `mav_rebel`、`mav_inventor`、`mav_hacker`、`mav_scientist`、`mav_producer`，
-分别提供相同的目标与边界、所需证据路径及不同的本次校验标记。
-各角色依据人格给出与当前项目有关的一项判断，并回报标记、证据和未确定之处。
-收齐实际结果与工具返回的线程 ID，再由 Maverick 综合判断初始化结果。
+安装写入的内容：
 
-可以沿现有并发上限分批执行，不修改业务文件，不启动业务训练，不附加整套测试。
-只在确有需要时追问仍可用的线程；不为了验收反复开会。
-
-若当前工具只能提示词委派，将对应人格文件、项目偏好和必要知识交给五个真实子 Agent，
-记为 `delegated_subagent`。给子任务取人格名称不等于原生配置已加载，
-不得将这类返回报告为 `native_subagent` 或原生验收 PASS。
-若没有任何子 Agent 工具，明确“六人格协作未完成”，保留已完成的安装工作。
-角色未被发现或会话需要重新加载时，说明具体限制，通过客户端正常流程在项目新会话复核，
-不重装、不修改全局权限来强行通过。
-
-将真实初始返回以 `phase: "initial"` 记入现有账本；尚无确认影响可用 `status: "reviewed"`、
-`impact: null`。Maverick 记录综合决定。主线程借用视角、调用未返回或临时改名不算初始独立参与。
-随后运行：
-
-```bash
-python3 .agents/skills/maverick/scripts/maverick.py report --project . \
-  --task TASK_ID --require-full-team
-```
-
-此命令打印报告并检查记录完整性：齐全为 0，不齐全为 2，格式错误为 1。
-它不能认证线程 ID 或证据真假，仍需核对实际工具返回。缺失时完成缺少的角色，
-不重跑已有有效返回；工具能力受限时如实说明，不补造记录。
-
-## 4. 交付与后续工作
-
-把任务 ID、五个角色的返回引用、综合决定、实际验证和下一步简短写入 STATE。
-报告应区分：
-
-| 项目 | 要说明的结果 |
+| 位置 | 用途 |
 |---|---|
-| 配置与知识 | 静态检查结果、知识就绪状态 |
-| 实际角色调用 | 五个角色的真实 ID、调用方式、返回证据或具体缺口 |
-| 首轮记录 | `report --require-full-team` 的结果，不能当作运行认证 |
-| 后续使用 | 已可开始完整协作，或尚未完成的具体部分 |
+| `.agents/skills/maverick-forge/` | 完整主控 skill、六个人格、跨学科库、Python 桥接与安装脚本 |
+| `.agents/mcp_config.json` | 本项目 Forge MCP 服务，保留其他服务 |
+| `AGENTS.md`、`GEMINI.md` 中 Forge 托管块 | 主控/worker 身份、旧协议迁移，保留用户正文 |
+| `.maverick/forge-manifest.json` | 版本、文件归属、固定主控配置与 CLI 路径 |
+| `.maverick/forge/start` | 固定 Neon high 和完整权限的启动入口 |
+| `.maverick/forge/tasks/` | 实际任务、会话与每轮结果，首次运行后产生 |
+| `.maverick/PROJECT.md`、`STATE.md`、`knowledge/`、`preferences.json`、`contributions.jsonl` | 项目事实、记忆、偏好与账本；已有内容保留 |
+| `~/.gemini/antigravity-cli/settings.json` | 合并用户要求的完整开发权限，保留其他字段 |
 
-之后每个 Maverick 用户级任务都先收齐五个独立判断，Maverick 说明采纳与未采纳理由后推进。
-不用声明 Research/Execution Mode。执行中按问题追问相关伙伴；同一 task 的继续、恢复和工具调用
-不重做首轮。任务结束再次检查参与记录，说明成果、实际贡献和关键思维转变。
+安装器只使用 Python 标准库。`--agy-bin /path/to/agy` 和 `--codex-bin /path/to/codex`
+可在安装时明确客户端路径。`FORGE_PYTHON=/path/to/python3` 可选择 bootstrap 使用的解释器。
+`FORGE_SOURCE=/path/to/checkout` 可让 `scripts/install.sh` 使用本地来源而不下载。
 
-用户明确要求 `update` 时才调整人格；升级框架不自动演化人格、不启动 benchmark。
+## 3. 启动与项目适配
+
+```bash
+./.maverick/forge/start
+```
+
+首次给 AGY 这段提示词即可：
+
+```text
+使用 Maverick Forge 初始化当前项目。
+你是 Maverick 主控，保留完整人格和已有项目资料；模型固定 Gemini 4 Neon high。
+先检查 Forge 安装和 CLI，然后从真实代码、文档与已有实验整理项目知识。
+Inventor 保留通用跨学科机制库，同时获得本项目的专业背景。
+让五个独立 Codex 人格各做一次简短的项目判断，再由你综合。
+将真实会话、知识适配和实际回传的验证结果分别报告，保存 STATE，给出六人格贡献摘要。
+普通已授权开发自主进行，不再逐项请求操作批准。
+```
+
+如果已完成适配，直接给开发目标，不需要每次重新初始化。
+AGY 界面也可在该项目使用 `/maverick-forge`，但通过其他入口启动时，当前会话模型与权限
+由该客户端实际设置决定；推荐上述启动器固定所需参数。
+
+## 4. 检查安装
+
+```bash
+python3 .agents/skills/maverick-forge/scripts/forge.py doctor --project .
+```
+
+`--static` 只查包、权限设置和 MCP 握手，不查账号或模型列表。
+输出区分 `installed`、`project_knowledge_ready`、`runtime_ready` 与 `live_roundtrip`。
+知识 READY 标签表示资料已标就绪，不代替阅读其真实内容；`live_roundtrip` 在 doctor 中始终是
+`NOT_TESTED_BY_DOCTOR`。一次真实六人格任务才检查实际模型调用和后台回传。
+
+退出码：0 表示本次检查项目通过，2 表示安装/运行/知识仍有缺项，1 表示配置或执行错误。
+静态检查返回 0 只表示静态项通过。
+
+## 5. 继续任务、更新框架、调整人格
+
+关掉 AGY 后可以重新运行 `.maverick/forge/start`，告诉它“继续 STATE 中的任务”。
+AGY 读取当前 `task_id`，查一次保存的结果，复用相同人格的 Codex session。
+上下文不会跨账户、丢失的 Codex 会话或不同机器自动迁移。
+
+**更新框架：** 再运行安装命令，或在新 checkout 运行：
+
+```bash
+python3 scripts/forge.py update --project /absolute/path/to/your-project
+```
+
+`update` 从当前这份源码安装，不自行猜远端版本。重复运行相同安装不会重复添加规则。
+保留用户修改；有冲突时新文件在 `.maverick/forge/incoming/`，由 AGY 对照合并。
+原版 `.codex/` 不删除；旧人格正文会迁到实际加载的新目录。
+
+**调整人格：** 在 AGY 里说：
+
+```text
+update Hacker：强化厌繁倾向。先保住我们选择的机制，再缩小实现；不要把开放研究退回参数微调。
+用本次实际多余设计补一个短反例，只更新这条习惯，保留其他个性和专业知识。
+```
+
+偏好写 `.maverick/preferences.json`，下一次该角色调用读取新偏好，不自动重跑任务或 benchmark。
+
+## 常见实际阻塞
+
+- **找不到客户端：** 安装 CLI 后重跑安装/doctor。实际客户端路径可用安装参数指定。
+- **模型不可用或未登录：** 运行 `agy models`、`codex login status` 检查；按客户端完成登录，保持固定模型。
+- **没有 Forge 工具：** 在项目目录启动 AGY，检查 `.agents/mcp_config.json`，重新加载项目 MCP/skills 或重开会话。
+- **某个角色失败：** 读取其本轮 stderr/report，用 `forge_resume` 沿保存的 run 重试；不要重复创建假角色。
+- **旧桥接意外退出：** 查状态。仍有旧作业存活时先确认其状态；不并发续接同一 session，也不随意杀其他进程。
+- **安装冲突：** 本地改动保留，查看 installer 的 `preserved_local_edits` 和 `incoming_candidates` 后合并。
+
+`--gemini-dir` 仅用于隔离安装检查或预配置；实际 AGY 启动使用当前用户的 `~/.gemini`，
+不能把写到其他目录的设置当成已被客户端加载。

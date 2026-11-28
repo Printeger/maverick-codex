@@ -1,0 +1,4 @@
+interface:
+  display_name: "Maverick Forge"
+  short_description: "AGY leads six distinct voices through real Codex sessions"
+  default_prompt: "Use $maverick-forge to lead this project as Maverick, gather five independent Codex judgments, choose a route, and deliver the result."
